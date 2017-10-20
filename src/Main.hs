@@ -3,8 +3,8 @@
 module Main where
 
 import           Control.Monad             ((>=>))
-import Control.Monad.Trans.Maybe
-import Control.Monad.IO.Class
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Maybe
 import qualified Data.ByteString.Lazy      as BS
 import           Data.Maybe                (catMaybes)
 import           Data.Monoid               ((<>))
@@ -17,29 +17,29 @@ import           Network.Wai               (Application, Request, Response,
                                             responseLBS)
 import           Network.Wai.Handler.Warp  (run)
 
-data HttpContext' = HttpContext' { req :: Request, res :: Maybe Response }
+data HttpContext = HttpContext { req :: Request, res :: Maybe Response }
 
-type HttpContext = MaybeT IO HttpContext'
+type HuaveM = MaybeT IO HttpContext
 
 data Config = Config { cfgPort :: Int }
 
-type WebPart = HttpContext' -> HttpContext
+type WebPart = HttpContext -> HuaveM
 
-initialContext :: Request -> HttpContext'
-initialContext r = HttpContext' r Nothing
+initialContext :: Request -> HttpContext
+initialContext r = HttpContext r Nothing
 
-isGet :: HttpContext' -> Bool
+isGet :: HttpContext -> Bool
 isGet ctx = requestMethod (req ctx) == methodGet
 
-isPost :: HttpContext' -> Bool
+isPost :: HttpContext -> Bool
 isPost ctx = requestMethod (req ctx) == methodPost
 
-pathMatches :: T.Text -> HttpContext' -> Bool
+pathMatches :: T.Text -> HttpContext -> Bool
 pathMatches path ctx = pathInfo (req ctx) == testedPath
   where testedPath = filter (/= "") (T.splitOn "/" path)
 
 -- Picks the first match from the list of routes
-choose :: [HttpContext' -> HttpContext] -> HttpContext' -> HttpContext
+choose :: [HttpContext -> HuaveM] -> HttpContext -> HuaveM
 choose [] _ = MaybeT $ return Nothing
 choose (r:rs) ctx = do
   maybeMatch <- liftIO $ runMaybeT $ r ctx
@@ -48,16 +48,16 @@ choose (r:rs) ctx = do
 mustSatisfy :: (a -> Bool) -> a -> Maybe a
 mustSatisfy p a = if p a then Just a else Nothing
 
-get :: HttpContext' -> HttpContext
+get :: HttpContext -> HuaveM
 get = MaybeT . return . mustSatisfy isGet
 
-post :: HttpContext' -> HttpContext
+post :: HttpContext -> HuaveM
 post = MaybeT . return . mustSatisfy isPost
 
-path :: T.Text -> HttpContext' -> HttpContext
+path :: T.Text -> HttpContext -> HuaveM
 path s = MaybeT . return . mustSatisfy (pathMatches s)
 
-ok :: BS.ByteString -> HttpContext' -> HttpContext
+ok :: BS.ByteString -> HttpContext -> HuaveM
 ok r ctx = MaybeT $ return $ Just (ctx { res = Just $ textResponse r})
 
 textResponse :: BS.ByteString -> Response
@@ -68,7 +68,7 @@ testApp = choose
   [ get >=> choose
     [ path "/" >=> ok "Homepage GET!"
     , path "/hello" >=> ok "Hello GET"
-    -- this route is simply ignored: 
+    -- this route is simply ignored:
     , path "/hello" >=> ok "Hello from duplicate GET"
     , path "/goodbye" >=> ok "Goodbye GET" ]
   , post >=> choose
