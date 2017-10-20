@@ -20,5 +20,6 @@ executable huave
                      , wai
                      , http-types
                      , mtl
+                     , transformers
                      , text
                      , bytestring
